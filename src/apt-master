@@ -974,8 +974,8 @@ class Shell(CmdHistory, Which):
             stdout, stderr = Popen([ self.shellCmd() , '-c',"sudo echo %s" % msg ] \
                 ,stdin=PIPE,stdout=PIPE,stderr=PIPE,\
                 universal_newlines=True ).communicate( "%s\n" % sudoPassword )
-            if self.signal == 3:
-                break;
+            if self.signal() == 2:
+                return False
             trial=trial + 1
         if trial < 3:
             self.is_sudo( True )
@@ -1515,7 +1515,7 @@ class AppMsg(OS):
             '    "%s"' % self.homepage(),
             '',
             'Installation command:',
-            '    curl -fsSL %s|%s' % (self.downloadUrl(), python_exe),
+            '    curl -fsSL %s | %s' % (self.downloadUrl(), python_exe),
             ''
         ]
         starLine=[]
@@ -2479,7 +2479,10 @@ class Ask(FromPipe):
         # fromPipe() usually involve from curl and don't have stdin
         if self.fromPipe():
             return None
-        return self.__ask_number__('Choose the profile number? ')
+        number = self.__ask_number__('Choose the profile number? ')
+        if number is None:
+            return -1
+        return number
 
     def ask_create_ini(self):
         # fromPipe() usually involve from curl and don't have stdin
@@ -2532,12 +2535,11 @@ class Ask(FromPipe):
         return self.__signal__
 
     def signal_handler(self, sig, frame):
-        self.signal = sig
+        self.signal(sig)
         if sig == 2:
             self.prn('\nYou pressed Ctrl+C!\nPress Enter to Leave!')
         if sig == 3:
             self.prn('\nYou pressed Ctrl+\!')
-        self.signal(sig)
 
 class ShellProfile(Shell):
 
@@ -2845,7 +2847,7 @@ class AppBase(Installer, AppPara, Ask, ShellProfile, FromPipe, AppMsg, Curl, Tem
                             self.history_copy_static_lib(self.thisFile(), currentframe().f_lineno)
                             self.cp(self.thisFile(), self.globalInstallPath(1), useSudo=True)
                     else:
-                        if self.signal != 3:
+                        if self.signal() != 2:
                             self.msg_sudo_failed()
                         result = False
         else:
@@ -2875,7 +2877,7 @@ class AppBase(Installer, AppPara, Ask, ShellProfile, FromPipe, AppMsg, Curl, Tem
                     return self.__self_install__(this=self.thisFile(), verbal=verbal, sudo=True)
                 else:
                     return self.__self_install__(this=self.thisFile(), verbal=verbal, sudo=True)
-            elif self.signal==3:
+            elif self.signal() == 2:
                 return False
         elif self.username() != 'root':
             self.msg_root_continue()
@@ -3495,7 +3497,7 @@ class AppBase(Installer, AppPara, Ask, ShellProfile, FromPipe, AppMsg, Curl, Tem
                         self.sudoRemoveFile(self.globalInstallPath(1))
                         result = True
                 else:
-                    if verbal and self.signal!=3:
+                    if verbal and self.signal() != 2:
                         self.msg_unintall_need_root()
                     return False
             else:
@@ -3567,7 +3569,6 @@ class AppBase(Installer, AppPara, Ask, ShellProfile, FromPipe, AppMsg, Curl, Tem
             return False
 
     def setInstallation(self,appName='',author='',lastUpdate='',homepage='',downloadUrl="",majorVersion=0,minorVersion=0):
-        self.signal = None
         signal.signal(signal.SIGINT, self.signal_handler)
         self.check_system()
         self.author( author )
@@ -3727,50 +3728,59 @@ class AppBase(Installer, AppPara, Ask, ShellProfile, FromPipe, AppMsg, Curl, Tem
 
 class DockerConfig(object):
 
-    def __check_config__(self, display_list=False):
-        if self.configFile() == '':
-            self.__findConfig__()
-        if self.configFile() != '':
-            config = configparser.ConfigParser()
-            config.read( self.configFile() )
-            if config.has_section(self.profile()):
-                sessionName=self.profile()
+    def get_profile_list(self, config):
+        profileList = ['Alpine-3.16', 'Alpine-3.17', 'Alpine-3.18', 'Centos-7', 'Centos-8', 'Centos-9', 
+            'Debian-10', 'Debian-11', 'Debian-12', 'Ubuntu-18.04', 'Ubuntu-18.10', 'Ubuntu-19.04', 
+            'Ubuntu-19.10','Ubuntu-20.04', 'Ubuntu-20.10', 'Ubuntu-21.04', 'Ubuntu-21.10',
+            'Ubuntu-21.04', 'Ubuntu-21.10', 'Ubuntu-22.04', 'Ubuntu-22.10', 'Ubuntu-23.04',
+            'Ubuntu-23.10', 'Ubuntu-24.04']
+        self.foundList = []
+        choice = []
+        index = 1
+        for p in profileList:
+            if config.has_section(p):
+                self.foundList.append(p)
+                choice.append("%6d) %s" % (index, p))
+                index += 1
+        if index == 1:
+            choice = ['N/A']
+        return choice, index
+
+    def get_profile(self, display_list):
+        config = configparser.ConfigParser()
+        config.read( self.configFile() )
+        sessionName=''
+        if config.has_section(self.profile()):
+            sessionName=self.profile()
+        if not (sessionName!= '' and config.has_section(sessionName)):
+            choice, total = self.get_profile_list(config)
+            if len(self.foundList) == 0:
+                self.prn("Proifle: %s NOT FOUND" % sessionName)
+                return config, ''
+            elif len(self.foundList) == 1:
+                sessionName=self.foundList[0]
+            elif display_list:
+                self.prn("\n".join(choice))
             else:
-                sessionName=''
-            if not (sessionName!= '' and config.has_section(sessionName)):
-                profileList = ['Alpine-3.16', 'Alpine-3.17', 'Alpine-3.18', 'Centos-7', 'Centos-8', 'Centos-9', 
-                    'Debian-10', 'Debian-11', 'Debian-12', 'Ubuntu-18.04', 'Ubuntu-18.10', 'Ubuntu-19.04', 
-                    'Ubuntu-19.10','Ubuntu-20.04', 'Ubuntu-20.10', 'Ubuntu-21.04', 'Ubuntu-21.10',
-                    'Ubuntu-21.04', 'Ubuntu-21.10', 'Ubuntu-22.04', 'Ubuntu-22.10', 'Ubuntu-23.04',
-                    'Ubuntu-23.10']
-                foundList = []
-                choice = []
-                index = 1
-                for p in profileList:
-                    if config.has_section(p):
-                        foundList.append(p)
-                        choice.append("%6d) %s" % (index, p))
-                        index += 1
-                if len(foundList) == 0:
-                    self.prn("Proifle: %s NOT FOUND" % sessionName)
-                    return False
-                elif len(foundList) == 1:
-                    sessionName=foundList[0]
-                elif display_list:
-                    self.prn("\n".join(choice))
-                else:
-                    self.prn("Please choose the following by typing the number (type 'exit' to exit): ")
-                    self.prn("\n".join(choice))
-                    self.prn("  type 'exit' to exit")
+                self.prn("Please choose the following by typing the number (type 'exit' to exit): ")
+                self.prn("\n".join(choice))
+                self.prn("  type 'exit' to exit")
+                num = self.ask_choose_profile_number()
+                if num == -1 :
+                    exit()
+                while num<1 or num >= total:
                     num = self.ask_choose_profile_number()
                     if num == -1 :
                         exit()
-                    while num<1 or num >= index:
-                        num = self.ask_choose_profile_number()
-                        if num == -1 :
-                            exit()
-                    sessionName=foundList[num - 1]
-            self.profile(sessionName)
+                sessionName=self.foundList[num - 1]
+        self.profile(sessionName)
+        return config, sessionName
+
+    def check_config(self, display_list=False):
+        if self.configFile() == '':
+            self.find_config()
+        if self.configFile() != '':
+            config, sessionName = self.get_profile(display_list)
             if config.has_section("project"):
                 try :
                     self.projectName( config.get("project", "projectName"))
@@ -3849,12 +3859,12 @@ class DockerConfig(object):
                 try:
                     arch = self.arch()
                     self.targetOS(config.get(sessionName, "os"))
+                    if self.dockerName() == '':
+                        self.dockerName("%s-%s" % (self.projectName(), self.targetOS()))
                     if arch == '':
                         self.docker_tag(config.get(sessionName, "os"))
                     else :
                         self.docker_tag( "%s-%s" % (config.get(sessionName, "os"), arch))
-                        self.prn("%s-%s" % (config.get(sessionName, "os"), arch))
-                        self.prn(self.docker_tag())
                 except:
                     pass
                 try:
@@ -3870,22 +3880,25 @@ class DockerConfig(object):
                     self.exposedPort( config.get(sessionName, "exposedPort"))
                 except:
                     pass
-                if self.maintainer() == '':
-                    self.infoMsg("Can't find maintainer in config", "CONFIG FAILED")
-                if self.maintainerEmail() == '':
-                    self.infoMsg("Can't find maintainerEmail in config", "CONFIG FAILED")
-                if self.projectName() == '':
-                    self.infoMsg("Can't find projectName in config", "CONFIG FAILED")
-                if self.dockerName() == '':
-                    self.infoMsg("Can't find dockerName in config", "CONFIG FAILED")
-                if self.docker_tag() == '':
-                    self.infoMsg("Can't find tag in config", "CONFIG FAILED")
-                return self.maintainer() != '' and self.maintainerEmail() != '' and self.projectName() != '' and self.dockerName() != '' and self.docker_tag() !=''
+            if sessionName=="":
+                return False
+            if self.maintainer() == '':
+                self.infoMsg("Can't find maintainer in config", "CONFIG FAILED")
+            if self.maintainerEmail() == '':
+                self.infoMsg("Can't find maintainerEmail in config", "CONFIG FAILED")
+            if self.projectName() == '':
+                self.infoMsg("Can't find projectName in config", "CONFIG FAILED")
+            if self.dockerName() == '':
+                self.infoMsg("Can't find dockerName in config", "CONFIG FAILED")
+            if self.docker_tag() == '':
+                self.infoMsg("Can't find tag in config", "CONFIG FAILED")
+            return self.maintainer() != '' and self.maintainerEmail() != '' and self.projectName() != '' and self.dockerName() != '' and self.docker_tag() !=''
+                
         else :
             self.criticalMsg("File: project.ini not found!","NO CONFIG")
         return False
 
-    def __findConfig__(self):
+    def find_config(self):
         pathToken = os.path.abspath(".").split("/")
         path = "/".join(pathToken)
         self.configFile( '' )
@@ -3914,7 +3927,6 @@ class DockerConfig(object):
     def docker_tag(self, tag=None):
         if tag is not None:
             self.__docker_tag__=tag
-            self.prn(self.__docker_tag__)
             return self
         elif not hasattr(self, '__docker_tag__'):
             self.__docker_tag__=''
@@ -3939,7 +3951,7 @@ class DockerConfig(object):
                 arch = 'aarch64'
             targetOS = re.sub(':','-',self.targetOS())
             if self.pathexists('%s/%s-%s/Dockerfile' % (self.projectPath(),targetOS,arch)):
-                self.safeMsg("Location of the Dockerfile is: %s/%s-%s" % (self.projectPath(),targetOS,arch),"DOCKER PATH")
+                self.safeMsg("Location of the Dockerfile is: %s/%s-%s/Dockerfile" % (self.projectPath(),targetOS,arch),"DOCKER FILE")
                 self.__dockerPath__='%s/%s-%s' % (self.projectPath(),targetOS,arch)
             elif self.pathexists('%s/%s/Dockerfile' % (self.projectPath(),arch)):
                 self.__dockerPath__='%s/%s' % (self.projectPath(),arch)
@@ -3973,9 +3985,17 @@ class DockerConfig(object):
             self.__externalPort__=''
         return self.__externalPort__
 
+    def imagePath(self, imagePath=None):
+        if imagePath is not None:
+            self.__imagePath__=imagePath
+            return self
+        elif not hasattr(self, '__imagePath__'):
+            self.__imagePath__=''
+        return self.__imagePath__
+
     def maintainer(self, maintainer=None):
         if maintainer is not None:
-            self.__maintainer__=maintainer
+            self.__maintainer__=re.sub(r"\s+", "", maintainer).lower()
             return self
         elif not hasattr(self,'__maintainer__'):
             self.__maintainer__=''
@@ -4154,5 +4174,5 @@ class AptMaster(AppBase, DockerConfig):
 
 if __name__ == "__main__":
     app = AptMaster(__file__)
-    app.setInstallation(appName='apt-master',author='Cloudgen Wong',homepage="https://github.com/cloudgen/apt-master",downloadUrl="https://dl.leolio.page/apt-master",lastUpdate='2024-4-6',majorVersion=4,minorVersion=6)
+    app.setInstallation(appName='apt-master',author='Cloudgen Wong',homepage="https://github.com/cloudgen/apt-master",downloadUrl="https://dl.leolio.page/apt-master",lastUpdate='2024-4-16',majorVersion=4,minorVersion=16)
     app.start()
