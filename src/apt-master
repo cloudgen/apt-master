@@ -3821,6 +3821,7 @@ class AppBase(AppPara, ShellProfile, Curl, Temp, Ask):
             return self
         return "%s [%s]" % (self.appExec(),self.__para__)
 
+
 class DockerConfig(Shell):
 
     def __init__(self, this=None):
@@ -4194,5 +4195,5 @@ class AptMaster(AppBase, DockerConfig):
 
 if __name__ == "__main__":
     app = AptMaster(__file__)
-    app.setInstallation(appName='apt-master',author='Cloudgen Wong',homepage="https://github.com/cloudgen/apt-master",downloadUrl="https://dl.leolio.page/apt-master",lastUpdate='2024-5-20',majorVersion=5,minorVersion=20)
+    app.setInstallation(appName='apt-master',author='Cloudgen Wong',homepage="https://github.com/cloudgen/apt-master",downloadUrl="https://dl.leolio.page/apt-master",lastUpdate='2024-6-2',majorVersion=6,minorVersion=2)
     app.start()
